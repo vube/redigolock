@@ -97,4 +97,4 @@ sys	0m0.316s
 License
 -------
 
-Redigolock is available under the [MIT License](https://github.com/vube/redigolock/LICENSE).
+Redigolock is available under the [MIT License](https://github.com/vube/redigolock/blob/master/LICENSE).
