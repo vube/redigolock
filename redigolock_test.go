@@ -1,32 +1,32 @@
 // Copyright (c) 2013 The Vubeologists. All rights reserved.
 // See the license at the root of this project.
 
-package redigolock;
+package redigolock
 
 import (
+	"errors"
+	"fmt"
 	redigo "github.com/garyburd/redigo/redis"
 	"testing"
-	"fmt"
 	"time"
-	"errors"
 )
 
 //==============================================================================
 
-const REDIS_HOST = "127.0.0.1:6381"
+const RedisHost = "127.0.0.1:6381"
 
 //==============================================================================
 
 type Redigomock struct {
 	FailureDoGetByteString bool
-	FailureDoGetString bool
-	FailureDoExec bool
+	FailureDoGetString     bool
+	FailureDoExec          bool
 }
 
 //==============================================================================
 
 // Mock redigo to get full coverage of failure handling
-func (m *Redigomock) Do(cmd string, args ...interface{}) (interface{},error) {
+func (m *Redigomock) Do(cmd string, args ...interface{}) (interface{}, error) {
 	if m.FailureDoGetByteString {
 		return []byte{'a', 'b', 'c'}, nil
 	}
@@ -37,21 +37,21 @@ func (m *Redigomock) Do(cmd string, args ...interface{}) (interface{},error) {
 
 	if m.FailureDoExec {
 		if cmd == "EXEC" {
-			return nil, errors.New("Mock error")
-		} else {
-			return []byte{'1'}, nil
+			return nil, errors.New("mock error")
 		}
+
+		return []byte{'1'}, nil
 	}
 
-	return nil, errors.New("Mock error")
+	return nil, errors.New("mock error")
 }
 
 func (m *Redigomock) Send(cmd string, args ...interface{}) error {
-	return errors.New("Mock error")
+	return errors.New("mock error")
 }
 
 func (m *Redigomock) Close() error {
-	return errors.New("Mock error")
+	return errors.New("mock error")
 }
 
 //==============================================================================
@@ -69,7 +69,7 @@ func Test_FailureDo(t *testing.T) {
 	_, err := lock.Lock()
 
 	if err == nil {
-		t.Error("Redigolock should have errored")
+		t.Error("redigolock should have errored")
 	}
 }
 
@@ -88,7 +88,7 @@ func Test_FailureDoFunc(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("Redigolock should have errored")
+		t.Error("redigolock should have errored")
 	}
 }
 
@@ -106,7 +106,7 @@ func Test_FailureDoGetByteString(t *testing.T) {
 	_, err := lock.Lock()
 
 	if err == nil {
-		t.Error("Redigolock should have errored")
+		t.Error("redigolock should have errored")
 	}
 }
 
@@ -124,7 +124,7 @@ func Test_FailureDoGetString(t *testing.T) {
 	_, err := lock.Lock()
 
 	if err == nil {
-		t.Error("Redigolock should have errored")
+		t.Error("redigolock should have errored")
 	}
 }
 
@@ -141,7 +141,7 @@ func Test_FailureDoExec(t *testing.T) {
 	_, err := lock.Lock()
 
 	if err == nil {
-		t.Error("Redigolock should have errored")
+		t.Error("redigolock should have errored")
 	}
 }
 
@@ -150,30 +150,30 @@ func Test_FailureDoExec(t *testing.T) {
 // Test that general lock acquisition succeeds
 func Test_Lock(t *testing.T) {
 	key := "Test_Lock"
-	conn, err := redigo.Dial("tcp", REDIS_HOST)
+	conn, err := redigo.Dial("tcp", RedisHost)
 
 	if err != nil {
 		t.Error(fmt.Sprintf("redigo.Dial failure [%s]", err))
 	}
 
-	lock := New(conn, key, 2000)
+	lock := New(conn, key)
 
 	status, err := lock.Lock()
 	defer lock.UnlockIfLocked()
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
-	if ! status {
-		t.Error("Lock acquisition failed")
+	if !status {
+		t.Error("lock acquisition failed")
 	}
 }
 
 // Test that general lock acquisition succeeds when wrapping a function call
 func Test_LockFunc(t *testing.T) {
 	key := "Test_LockFunc"
-	conn, err := redigo.Dial("tcp", REDIS_HOST)
+	conn, err := redigo.Dial("tcp", RedisHost)
 
 	if err != nil {
 		t.Error(fmt.Sprintf("redigo.Dial failure [%s]", err))
@@ -186,35 +186,34 @@ func Test_LockFunc(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
-	if ! status {
-		t.Error("Lock acquisition failed")
+	if !status {
+		t.Error("lock acquisition failed")
 	}
 }
 
 // Test that lock acquisition fails when the lock exists
 func Test_BlockedLock(t *testing.T) {
 	key := "Test_BlockedLock"
-	conn, err := redigo.Dial("tcp", REDIS_HOST)
+	conn, err := redigo.Dial("tcp", RedisHost)
 
 	if err != nil {
 		t.Error(fmt.Sprintf("redigo.Dial failure [%s]", err))
 	}
 
-	lock1 := New(conn, key, 2000)
-	lock1.AutoExpire = 2000
+	lock1 := New(conn, key, 2001, 2000)
 
 	status, err := lock1.Lock()
 	defer lock1.UnlockIfLocked()
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
-	if ! status {
-		t.Error("Lock acquisition failed")
+	if !status {
+		t.Error("lock acquisition failed")
 	}
 
 	lock2 := New(conn, key, 1000)
@@ -223,11 +222,11 @@ func Test_BlockedLock(t *testing.T) {
 	defer lock2.UnlockIfLocked()
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
 	if status {
-		t.Error("Lock acquisition succeeded")
+		t.Error("lock acquisition succeeded")
 	}
 }
 
@@ -235,24 +234,23 @@ func Test_BlockedLock(t *testing.T) {
 // held after being unlocked
 func Test_BlockedHold(t *testing.T) {
 	key := "Test_BlockedHold"
-	conn, err := redigo.Dial("tcp", REDIS_HOST)
+	conn, err := redigo.Dial("tcp", RedisHost)
 
 	if err != nil {
 		t.Error(fmt.Sprintf("redigo.Dial failure [%s]", err))
 	}
 
-	lock1 := New(conn, key, 2000)
-	lock1.Hold = 2000
+	lock1 := New(conn, key, DefaultTimeout, DefaultAutoExpire, 2000)
 
 	status, err := lock1.Lock()
 	defer lock1.UnlockIfLocked()
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
-	if ! status {
-		t.Error("Lock acquisition failed")
+	if !status {
+		t.Error("lock acquisition failed")
 	}
 
 	lock1.Unlock()
@@ -262,11 +260,11 @@ func Test_BlockedHold(t *testing.T) {
 	defer lock2.UnlockIfLocked()
 
 	if err != nil {
-		t.Error(fmt.Sprintf("Lock operation failed [%s]", err))
+		t.Error(fmt.Sprintf("lock operation failed [%s]", err))
 	}
 
 	if status {
-		t.Error("Lock acquisition succeeded")
+		t.Error("lock acquisition succeeded")
 	}
 }
 
@@ -276,16 +274,15 @@ func Test_MultiLock(t *testing.T) {
 	key := "Test_MultiLock"
 	res := make(chan bool)
 
-    for i := 0; i < 100; i++ {
-    	go func() {
-			conn, err := redigo.Dial("tcp", REDIS_HOST)
+	for i := 0; i < 100; i++ {
+		go func() {
+			conn, err := redigo.Dial("tcp", RedisHost)
 
 			if err != nil {
 				t.Error(fmt.Sprintf("redigo.Dial failure [%s]", err))
 			}
 
-			lock := New(conn, key, 2000)
-			lock.Tick = 5
+			lock := New(conn, key, 2000, DefaultAutoExpire, DefaultHold, 5)
 
 			status, _ := lock.Lock()
 			defer lock.UnlockIfLocked()
@@ -294,9 +291,9 @@ func Test_MultiLock(t *testing.T) {
 		}()
 	}
 
-    for i := 1; i <= 100; i++ {
-		if ! <-res {
-			t.Error("Lock acquisition failed")
+	for i := 1; i <= 100; i++ {
+		if !<-res {
+			t.Error("lock acquisition failed")
 		}
 	}
 }
@@ -309,15 +306,14 @@ func Test_Increment(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		go func() {
-			conn, err := redigo.Dial("tcp", REDIS_HOST)
+			conn, err := redigo.Dial("tcp", RedisHost)
 
 			if err != nil {
-				t.Error("redigo.Dial failure due to '%s'", err)
+				t.Errorf("redigo.Dial failure due to '%s'", err)
 				return
 			}
 
-			lock := New(conn, key, 2000)
-			lock.Tick = 5
+			lock := New(conn, key, 2000, DefaultAutoExpire, DefaultHold, 5)
 
 			status, err := lock.Lock()
 
@@ -329,9 +325,9 @@ func Test_Increment(t *testing.T) {
 				conn.Do("SET", key, v)
 			} else {
 				if err != nil {
-					t.Error("Lock operation failure due to '%s", err)
+					t.Errorf("lock operation failure due to '%s", err)
 				} else {
-					t.Error("Timed out during lock contention")
+					t.Error("timed out during lock contention")
 				}
 			}
 
@@ -340,22 +336,21 @@ func Test_Increment(t *testing.T) {
 		}()
 	}
 
-    for i := 0; i < 100; i++ {
+	for i := 0; i < 100; i++ {
 		<-res
 	}
 
-	conn, err := redigo.Dial("tcp", REDIS_HOST)
+	conn, err := redigo.Dial("tcp", RedisHost)
 
 	if err != nil {
-		t.Error("redigo.Dial failure due to '%s'", err)
+		t.Errorf("redigo.Dial failure due to '%s'", err)
 	}
 
 	v, _ := redigo.Int(conn.Do("GET", key))
 
 	if v != 100 {
-		t.Error("Increment miscalculation")
+		t.Error("increment miscalculation")
 	}
 
 	conn.Do("DEL", key)
 }
-

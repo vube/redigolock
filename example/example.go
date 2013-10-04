@@ -1,25 +1,3 @@
-Redigolock
-==========
-
-A distributed optimistic locking manager implemented in
-[Go](http://golang.org/), using the [Redis](http://redis.io/) data store with
-the [Redigo](https://github.com/garyburd/redigo/) client.
-
-Installation
-------------
-
-Install Redigolock using the "go get" command:
-
-    go get github.com/vube/redigolock
-
-The Go distribution, a connection to a Redis server capable of keyless commands
-(ie, not behind nutcracker) and [Redigo](https://github.com/garyburd/redigo/)
-are Redigolock's dependencies.
-
-Example
--------
-
-```go
 package main
 
 import (
@@ -43,7 +21,7 @@ func main() {
 				return
 			}
 
-			lock := redigolock.New(conn, key)
+			lock := redigolock.New(conn, key, 30000)
 
 			status, err := lock.Lock()
 
@@ -81,19 +59,3 @@ func main() {
 	fmt.Printf("key = %d\n", v)
 	conn.Do("DEL", key)
 }
-```
-
-Output:
-```
-redigolock$ go run example/example.go
-key = 100
-
-real	0m23.117s
-user	0m0.292s
-sys	0m1.020s
-```
-
-License
--------
-
-Redigolock is available under the [MIT License](https://github.com/vube/redigolock/blob/master/LICENSE).
