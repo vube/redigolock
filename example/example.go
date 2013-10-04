@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func main() {
+func runExample(withLock bool) {
 	host := "127.0.0.1:6381"
-	key := "mylock"
+	key := fmt.Sprintf("mylock_%b", withLock)
 	res := make(chan bool)
 
 	for i := 0; i < 100; i++ {
@@ -21,9 +21,15 @@ func main() {
 				return
 			}
 
-			lock := redigolock.New(conn, key, 30000)
+			lock := redigolock.New(conn, key)
 
-			status, err := lock.Lock()
+			var status bool
+
+			if withLock {
+				status, err = lock.Lock()
+			} else {
+				status, err = true, error(nil)
+			}
 
 			if status {
 				// arbitrary distributed non-atomic operation
@@ -56,6 +62,17 @@ func main() {
 	}
 
 	v, _ := redigo.Int(conn.Do("GET", key))
-	fmt.Printf("key = %d\n", v)
+
+	if withLock {
+		fmt.Printf("Non-atomic increment, with lock, incremented to %d (should be 100)\n", v)
+	} else {
+		fmt.Printf("Non-atomic increment, without lock, incremented to %d (should be 100)\n", v)
+	}
+
 	conn.Do("DEL", key)
+}
+
+func main() {
+	runExample(false)
+	runExample(true)
 }
