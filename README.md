@@ -85,7 +85,7 @@ func main() {
 
 Output:
 ```
-redigolock$ go run example/example.go
+redigolock$ time go run example/example.go
 key = 100
 
 real	0m23.117s
