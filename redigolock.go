@@ -1,5 +1,9 @@
 // Copyright (c) 2013 The Vubeologists. All rights reserved
 // See the license at the root of this project
+//
+// For more information
+// http://redis.io/topics/transactions#cas
+// http://redis.io/commands/setnx
 
 package redigolock
 

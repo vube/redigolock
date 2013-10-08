@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	redigo "github.com/garyburd/redigo/redis"
+	"sync"
 	"testing"
 	"time"
 )
@@ -302,10 +303,12 @@ func Test_MultiLock(t *testing.T) {
 // non-atomic Redis operation surrounded by a lock
 func Test_Increment(t *testing.T) {
 	key := "Test_Increment"
-	res := make(chan bool)
+	wg := new(sync.WaitGroup)
 
+	wg.Add(100)
 	for i := 0; i < 100; i++ {
 		go func() {
+			defer wg.Done()
 			conn, err := redigo.Dial("tcp", RedisHost)
 
 			if err != nil {
@@ -332,13 +335,10 @@ func Test_Increment(t *testing.T) {
 			}
 
 			lock.UnlockIfLocked()
-			res <- status
 		}()
 	}
 
-	for i := 0; i < 100; i++ {
-		<-res
-	}
+	wg.Wait()
 
 	conn, err := redigo.Dial("tcp", RedisHost)
 

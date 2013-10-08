@@ -1,19 +1,34 @@
+// Copyright (c) 2013 The Vubeologists. All rights reserved.
+// See the license at the root of this project.
+
 package main
 
 import (
 	"fmt"
 	redigo "github.com/garyburd/redigo/redis"
 	"github.com/vube/redigolock"
+	"sync"
 	"time"
 )
 
 func runExample(withLock bool) {
 	host := "127.0.0.1:6381"
-	key := fmt.Sprintf("mylock_%b", withLock)
-	res := make(chan bool)
+	key := fmt.Sprintf("mylock_%t", withLock)
+	wg := new(sync.WaitGroup)
 
-	for i := 0; i < 100; i++ {
+	conn, err := redigo.Dial("tcp", host)
+
+	if err != nil {
+		fmt.Errorf("redigo.Dial failure due to '%s'", err)
+		return
+	}
+
+	conn.Do("DEL", key)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			conn, err := redigo.Dial("tcp", host)
 
 			if err != nil {
@@ -46,33 +61,26 @@ func runExample(withLock bool) {
 			}
 
 			lock.UnlockIfLocked()
-			res <- status
 		}()
 	}
 
-	for i := 0; i < 100; i++ {
-		<-res
-	}
-
-	conn, err := redigo.Dial("tcp", host)
-
-	if err != nil {
-		fmt.Errorf("redigo.Dial failure due to '%s'", err)
-		return
-	}
+	wg.Wait()
 
 	v, _ := redigo.Int(conn.Do("GET", key))
 
 	if withLock {
-		fmt.Printf("Non-atomic increment, with lock, incremented to %d (should be 100)\n", v)
+		fmt.Printf("Non-atomic increment, with lock, incremented to %d (should be 10)\n", v)
 	} else {
-		fmt.Printf("Non-atomic increment, without lock, incremented to %d (should be 100)\n", v)
+		fmt.Printf("Non-atomic increment, without lock, incremented to %d (should be 10)\n", v)
 	}
 
 	conn.Do("DEL", key)
 }
 
 func main() {
-	runExample(false)
-	runExample(true)
+	for {
+		runExample(false)
+		runExample(true)
+		fmt.Println()
+	}
 }
