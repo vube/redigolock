@@ -9,6 +9,7 @@ package redigolock
 
 import (
 	"errors"
+	redigo "github.com/garyburd/redigo/redis"
 	"strconv"
 	"time"
 )
@@ -26,8 +27,8 @@ const (
 	// unlock
 	DefaultHold = 0
 
-	// DefaultTick sets a default retry on acquiring the lock after .1 seconds
-	DefaultTick = 100
+	// DefaultTick sets a default retry on acquiring the lock after .25 seconds
+	DefaultTick = 250
 )
 
 //==============================================================================
@@ -129,9 +130,9 @@ func New(conn Redigoconn, key string, extra ...interface{}) *Redigolock {
 func (r *Redigolock) Lock() (bool, error) {
 	status := false
 	r.locked = status
-	timeout := time.Now().UnixNano()/1000000 + r.Timeout
+	timeout := time.Now().UnixNano()/int64(time.Millisecond) + r.Timeout
 
-	for time.Now().UnixNano()/1000000 < timeout {
+	for time.Now().UnixNano()/int64(time.Millisecond) < timeout {
 		lkey := r.generateLockKey()
 
 		r.Conn.Send("WATCH", lkey)
@@ -159,9 +160,10 @@ func (r *Redigolock) Lock() (bool, error) {
 			}
 		}
 
-		if keyExpire < time.Now().UnixNano()/1000000 {
+		if keyExpire < time.Now().UnixNano()/int64(time.Millisecond) {
 			r.Conn.Send("MULTI")
-			r.Conn.Send("SET", lkey, time.Now().UnixNano()/1000000+r.AutoExpire)
+			r.Conn.Send("SET", lkey, time.Now().UnixNano()/
+				int64(time.Millisecond)+r.AutoExpire)
 			r.Conn.Send("PEXPIRE", lkey, r.AutoExpire+r.Hold)
 			res, err := r.Conn.Do("EXEC")
 
@@ -196,6 +198,33 @@ func (r *Redigolock) LockFunc(call func()) (status bool, err error) {
 	}
 	call()
 	return
+}
+
+// KeepAlive will update the lock's expiration to keep it from expiring at the
+// end of DefaultAutoExpire
+func (r *Redigolock) KeepAlive() error {
+	lkey := r.generateLockKey()
+	r.Conn.Send("MULTI")
+	r.Conn.Send("SET", lkey, time.Now().UnixNano()/int64(time.Millisecond)+
+		r.AutoExpire)
+	r.Conn.Send("PEXPIRE", lkey, r.AutoExpire+r.Hold)
+	res, err := redigo.Values(r.Conn.Do("EXEC"))
+
+	if err != nil {
+		return err
+	}
+
+	val, err := redigo.Int64(res[1], err)
+
+	if err != nil {
+		return err
+	}
+
+	if val != 1 {
+		return errors.New("unable to keep the lock alive, key does not exit")
+	}
+
+	return nil
 }
 
 // Unlock a lock

@@ -19,32 +19,14 @@ const RedisHost = "127.0.0.1:6381"
 //==============================================================================
 
 type Redigomock struct {
-	FailureDoGetByteString bool
-	FailureDoGetString     bool
-	FailureDoExec          bool
+	FailureCall func(cmd string) (interface{}, error)
 }
 
 //==============================================================================
 
 // Mock redigo to get full coverage of failure handling
 func (m *Redigomock) Do(cmd string, args ...interface{}) (interface{}, error) {
-	if m.FailureDoGetByteString {
-		return []byte{'a', 'b', 'c'}, nil
-	}
-
-	if m.FailureDoGetString {
-		return "abc", nil
-	}
-
-	if m.FailureDoExec {
-		if cmd == "EXEC" {
-			return nil, errors.New("mock error")
-		}
-
-		return []byte{'1'}, nil
-	}
-
-	return nil, errors.New("mock error")
+	return m.FailureCall(cmd)
 }
 
 func (m *Redigomock) Send(cmd string, args ...interface{}) error {
@@ -61,9 +43,10 @@ func (m *Redigomock) Close() error {
 func Test_FailureDo(t *testing.T) {
 	key := "Test_FailureDo"
 	conn := Redigomock{}
-	conn.FailureDoGetByteString = false
-	conn.FailureDoGetString = false
-	conn.FailureDoExec = false
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return nil, errors.New("mock error")
+	}
 
 	lock := New(Redigoconn(&conn), key, 2000)
 
@@ -78,9 +61,10 @@ func Test_FailureDo(t *testing.T) {
 func Test_FailureDoFunc(t *testing.T) {
 	key := "Test_IncrementFuncFailure"
 	conn := Redigomock{}
-	conn.FailureDoGetByteString = false
-	conn.FailureDoGetString = false
-	conn.FailureDoExec = false
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return nil, errors.New("mock error")
+	}
 
 	lock := New(Redigoconn(&conn), key, 2000)
 
@@ -98,9 +82,10 @@ func Test_FailureDoFunc(t *testing.T) {
 func Test_FailureDoGetByteString(t *testing.T) {
 	key := "Test_FailureDoGetString"
 	conn := Redigomock{}
-	conn.FailureDoGetByteString = true
-	conn.FailureDoGetString = false
-	conn.FailureDoExec = false
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return []byte("abc"), nil
+	}
 
 	lock := New(Redigoconn(&conn), key, 2000)
 
@@ -116,9 +101,10 @@ func Test_FailureDoGetByteString(t *testing.T) {
 func Test_FailureDoGetString(t *testing.T) {
 	key := "Test_FailureDoGetString"
 	conn := Redigomock{}
-	conn.FailureDoGetByteString = false
-	conn.FailureDoGetString = true
-	conn.FailureDoExec = false
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return "abc", nil
+	}
 
 	lock := New(Redigoconn(&conn), key, 2000)
 
@@ -133,13 +119,60 @@ func Test_FailureDoGetString(t *testing.T) {
 func Test_FailureDoExec(t *testing.T) {
 	key := "Test_FailureDoGetString"
 	conn := Redigomock{}
-	conn.FailureDoGetByteString = false
-	conn.FailureDoGetString = false
-	conn.FailureDoExec = true
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		if cmd == "EXEC" {
+			return nil, errors.New("mock error")
+		}
+
+		return []byte{'1'}, nil
+	}
 
 	lock := New(Redigoconn(&conn), key, 2000)
 
 	_, err := lock.Lock()
+
+	if err == nil {
+		t.Error("redigolock should have errored")
+	}
+}
+
+// Test KeepAlive() failures
+func Test_FailuresWithKeepAlive(t *testing.T) {
+	key := "Test_FailureWithKeepAlive"
+	conn := Redigomock{}
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		if cmd == "EXEC" {
+			return nil, errors.New("mock error")
+		}
+
+		return []byte{'1'}, nil
+	}
+
+	lock := New(Redigoconn(&conn), key, 2000)
+
+	err := lock.KeepAlive()
+
+	if err == nil {
+		t.Error("redigolock should have errored")
+	}
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return []interface{}{[]byte("OK"), "abc"}, nil
+	}
+
+	err = lock.KeepAlive()
+
+	if err == nil {
+		t.Error("redigolock should have errored")
+	}
+
+	conn.FailureCall = func(cmd string) (interface{}, error) {
+		return []interface{}{[]byte("OK"), int64(0)}, nil
+	}
+
+	err = lock.KeepAlive()
 
 	if err == nil {
 		t.Error("redigolock should have errored")
@@ -353,4 +386,63 @@ func Test_Increment(t *testing.T) {
 	}
 
 	conn.Do("DEL", key)
+}
+
+// Test that the keepalive function actually keeps the lock alive
+func Test_TimeoutKeepAlive(t *testing.T) {
+	key := "Test_Keepalive"
+	wg := new(sync.WaitGroup)
+
+	conn1, err := redigo.Dial("tcp", RedisHost)
+
+	if err != nil {
+		t.Errorf("redigo.Dial failure due to '%s'", err)
+		return
+	}
+
+	conn2, err := redigo.Dial("tcp", RedisHost)
+
+	if err != nil {
+		t.Errorf("redigo.Dial failure due to '%s'", err)
+		return
+	}
+
+	lock1 := New(conn1, key, 1000, 1000, 0, 5)
+	status, err := lock1.Lock()
+
+	if err != nil || !status {
+		t.Error("unable to lock")
+	}
+
+	wg.Add(20)
+	go func() {
+		for i := 0; i < 20; i++ {
+			err := lock1.KeepAlive()
+
+			if err != nil {
+				t.Errorf("timed out during lock contention due to '%v'", err)
+			}
+
+			wg.Done()
+			time.Sleep(time.Second / 2)
+		}
+	}()
+
+	time.Sleep(time.Second * 2)
+
+	lock2 := New(conn2, key, 1000, 1000, 0, 5)
+	status, err = lock2.Lock()
+
+	if status {
+		t.Error("should not have been able to lock")
+	}
+
+	wg.Wait()
+	time.Sleep(time.Second * 2)
+
+	status, err = lock2.Lock()
+
+	if err != nil || !status {
+		t.Error("should have been able to lock")
+	}
 }
